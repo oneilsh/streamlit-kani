@@ -4,16 +4,19 @@
 ##### 0 - load libs
 ########################
 
+
+# kani_streamlit imports
+import kani_streamlit as ks
+from kani_streamlit import StreamlitKani
+
+# for reading API keys from .env file
 import os
+import dotenv # pip install python-dotenv
 
 # kani imports
 from typing import Annotated
 from kani import AIParam, ai_function
 from kani.engines.openai import OpenAIEngine
-
-# kani_streamlit imports
-import kani_streamlit as ks
-from kani_streamlit import StreamlitKani
 
 # streamlit and pandas for extra functionality
 import streamlit as st
