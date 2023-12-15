@@ -49,14 +49,13 @@ class StreamlitKani(Kani):
     
     @ai_function()
     def read_text_file(self, file_name: Annotated[str, AIParam(desc="The name of the file to read.")]):
-        """Read a text-like file uploaded by the user."""
+        """Read a text-like file uploaded by the user. Appropriate for .txt, .md, .csv, .json, etc."""
         for file in self.files:
             if file.name == file_name:
-                # if the file is txt-like, use .read()
-                if file.type == "text/plain":
-                    return file.read()
+                # assume the file is txt-like, use .read()
+                return file.read()
 
-        return f"Error: file name not found in current uploaded file set."
+        return f"Error: file name not found in current uploaded file set, or file is not text-like."
     
     @ai_function()
     def read_pdf_file(self, 
@@ -73,7 +72,9 @@ class StreamlitKani(Kani):
                             return "\n\n".join([page.extract_text() for page in pdf.pages])
                         else:
                             return "\n\n".join([page.extract_text() for page in pdf.pages if page.page_number in pages])
-                    
+                else:
+                    return f"Error: file is not a PDF."
+                
         return f"Error: file name not found in current uploaded file set."
     
     async def get_model_completion(self, include_functions: bool = True, **kwargs) -> BaseCompletion:
@@ -327,7 +328,7 @@ async def _main():
         st.markdown("#")
 
         uploaded_files = st.file_uploader("Upload a document", 
-                                          type=["txt", "pdf"], 
+                                          type= None, 
                                           accept_multiple_files = True,
                                           )
         
