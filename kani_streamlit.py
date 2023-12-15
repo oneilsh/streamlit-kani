@@ -1,6 +1,7 @@
 import streamlit as st
 import logging
 from kani import ChatRole, ChatMessage, Kani
+from kani.engines.base import BaseCompletion, Completion
 import asyncio
 import tempfile
 import json
@@ -34,6 +35,8 @@ class StreamlitKani(Kani):
         self.display_messages = []
         self.conversation_started = False
         self.files = []
+        self.tokens_used_prompt = 0
+        self.tokens_used_completion = 0
 
     def render_in_ui(self, data):
         """Render a dataframe in the chat window."""
@@ -73,6 +76,30 @@ class StreamlitKani(Kani):
                     
         return f"Error: file name not found in current uploaded file set."
     
+    async def get_model_completion(self, include_functions: bool = True, **kwargs) -> BaseCompletion:
+        """Overrides the default get_model_completion to track tokens used.
+        See https://github.com/zhudotexe/kanpai/blob/cc603705d353e4e9b9aa3cf9fbb12e3a46652c55/kanpai/base_kani.py#L48
+        """
+        completion = await super().get_model_completion(include_functions, **kwargs)
+        self.tokens_used_prompt += completion.prompt_tokens
+        self.tokens_used_completion += completion.completion_tokens
+
+        message = completion.message
+        # HACK: sometimes openai's function calls are borked; we fix them here
+        if (function_call := message.function_call) and function_call.name.startswith("functions."):
+            fixed_name = function_call.name.removeprefix("functions.")
+            message = message.copy_with(function_call=function_call.copy_with(name=fixed_name))
+            return Completion(
+                message, prompt_tokens=completion.prompt_tokens, completion_tokens=completion.completion_tokens
+            )
+        return completion
+    
+    async def estimate_next_tokens_cost(self):
+        """Estimate the cost of the next message (not including the response)"""
+        # includes all previous messages, plus the current
+        return sum(self.message_token_len(m) for m in await self.get_prompt()) + self.engine.token_reserve + self.engine.function_token_reserve(list(self.functions.values()))
+
+
 
 def initialize_app_config(**kwargs):
     _initialize_session_state()
@@ -328,3 +355,10 @@ async def _main():
         _render_message(message)
 
     await _handle_chat_input()
+
+    if "token_costs" in st.session_state.agents[st.session_state.current_agent_name]:
+        prompt_cost = st.session_state.agents[st.session_state.current_agent_name]["token_costs"]["prompt"]
+        completion_cost = st.session_state.agents[st.session_state.current_agent_name]["token_costs"]["completion"]
+        agent = st.session_state.agents[st.session_state.current_agent_name]['agent']
+        cost = (agent.tokens_used_prompt / 1000.0) * prompt_cost + (agent.tokens_used_completion / 1000.0) * completion_cost
+        st.caption(f"Chat prompt tokens: {agent.tokens_used_prompt}, completion tokens: {agent.tokens_used_completion}, cost: ${cost:.2f}")

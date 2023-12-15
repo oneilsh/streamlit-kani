@@ -96,6 +96,7 @@ def get_agents():
             "description": "An agent that demonstrates the capabilities of StreamlitKani.",
             "avatar": "🦀", # these can also be URLs
             "user_avatar": "👤",
+            "token_costs": {"prompt": 0.01, "completion": 0.03}
         },
 
     }
