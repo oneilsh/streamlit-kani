@@ -6,6 +6,10 @@ import tempfile
 import json
 import os
 import shutil
+from kani import AIParam, ai_function
+from typing import Annotated, Optional, List
+import pdfplumber
+
 
 
 class UIOnlyMessage:
@@ -29,11 +33,46 @@ class StreamlitKani(Kani):
         super().__init__(engine)
         self.display_messages = []
         self.conversation_started = False
+        self.files = []
 
     def render_in_ui(self, data):
         """Render a dataframe in the chat window."""
         self.display_messages.append(UIOnlyMessage(data))
 
+    @ai_function()
+    def list_current_files(self):
+        """List the files currently uploaded by the user."""
+        return self.files
+    
+    @ai_function()
+    def read_text_file(self, file_name: Annotated[str, AIParam(desc="The name of the file to read.")]):
+        """Read a text-like file uploaded by the user."""
+        for file in self.files:
+            if file.name == file_name:
+                # if the file is txt-like, use .read()
+                if file.type == "text/plain":
+                    return file.read()
+
+        return f"Error: file name not found in current uploaded file set."
+    
+    @ai_function()
+    def read_pdf_file(self, 
+                      file_name: Annotated[str, AIParam(desc="The name of the file to read.")],
+                      pages: Annotated[List[int], AIParam(desc="The pages of the file to read. Optional.")] = None
+                      ):
+        """Read a PDF file uploaded by the user. Always ask the user if they want to read all pages (default), or a specific set of pages before calling this function."""
+        for file in self.files:
+            if file.name == file_name:
+                # if it's a pdf, use pdfplumber to extract text
+                if file.type == "application/pdf":
+                    with pdfplumber.open(file) as pdf:
+                        if pages == None:
+                            return "\n\n".join([page.extract_text() for page in pdf.pages])
+                        else:
+                            return "\n\n".join([page.extract_text() for page in pdf.pages if page.page_number in pages])
+                    
+        return f"Error: file name not found in current uploaded file set."
+    
 
 def initialize_app_config(**kwargs):
     _initialize_session_state()
@@ -259,6 +298,13 @@ async def _main():
         st.markdown("#")
         st.markdown("#")
         st.markdown("#")
+
+        uploaded_files = st.file_uploader("Upload a document", 
+                                          type=["txt", "pdf"], 
+                                          accept_multiple_files = True,
+                                          )
+        
+        st.session_state.agents[current_agent_name]["agent"].files = uploaded_files
 
         st.markdown("---")
 
