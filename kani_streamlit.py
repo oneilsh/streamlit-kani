@@ -10,6 +10,9 @@ import shutil
 from kani import AIParam, ai_function
 from typing import Annotated, Optional, List
 import pdfplumber
+import pandas as pd
+from pandasql import sqldf
+import re
 
 
 
@@ -37,6 +40,7 @@ class StreamlitKani(Kani):
         self.files = []
         self.tokens_used_prompt = 0
         self.tokens_used_completion = 0
+        self.dfs = {}
 
     def render_in_ui(self, data):
         """Render a dataframe in the chat window."""
@@ -47,6 +51,40 @@ class StreamlitKani(Kani):
         """List the files currently uploaded by the user."""
         return self.files
     
+    @ai_function()
+    # todo: convert to something like "load_csv_files" that takes a list of files,
+    # don't display to user (make seperate visualization function)
+    def read_csv_file(self, file_name: Annotated[str, AIParam(desc="The name of the file to read.")]):
+        """Read a CSV file uploaded by the user."""
+        for file in self.files:
+            if file.name == file_name:
+                # assume the file is a csv, use pandas to read it
+                if file.type == "text/csv":
+                    df = pd.read_csv(file)
+                    # create an SQL-compatible table name based on the filename, keeping only alphanumeric characters, dots to underscores, and uppercasing
+                    table_name = re.sub(r"[^a-zA-Z0-9_]", "_", file_name).upper()
+                    self.dfs[table_name] = df
+                    sample = df.head(10)
+                    self.render_in_ui(lambda: st.dataframe(sample))
+                    return f"The user has been shown the first {min(10, len(sample))} rows of the CSV. There are {len(sample)} rows total, and {len(df.columns)} columns named: {', '.join(df.columns)}. You can query this table as {table_name} in the query_table function."
+
+                else:
+                    return f"Error: file is not a CSV."
+                
+        return f"Error: file name not found in current uploaded file set."
+
+    @ai_function()
+    def query_dfs(self,
+                 query: Annotated[str, AIParam(desc="The query to run on the dataframe.")]):
+        """Query a dataframe uploaded by the user."""
+        try:
+            result = sqldf(query, self.dfs)
+            #self.render_in_ui(lambda: st.dataframe(result))
+            return f"Query result: {result.to_string(index=False)}"
+        except Exception as e:
+            return f"Error: {e}"
+        
+
     @ai_function()
     def read_text_file(self, file_name: Annotated[str, AIParam(desc="The name of the file to read.")]):
         """Read a text-like file uploaded by the user. Appropriate for .txt, .md, .csv, .json, etc."""
